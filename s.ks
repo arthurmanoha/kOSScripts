@@ -8,13 +8,34 @@ set isGuiVisible to true.
 
 LOCAL airSpeedBox is my_gui:addHBox().
 
+//////////////////////////////////////////////////////////////////   AIRSPEED
+
 LOCAL label IS airSpeedBox:ADDLABEL("Airspeed").
 SET label:STYLE:ALIGN TO "LEFT".
 
+
+local speedDecreaseButton to airSpeedBox:addButton("Slower").
+SET speedDecreaseButton:STYLE:ALIGN TO "CENTER".
+SET speedDecreaseButton:STYLE:HSTRETCH TO False.
+set speedDecreaseButton:style:width to 60.
+set speedDecreaseButton:onClick to {
+	increaseCruiseSpeed(-5).
+	set speedTextField:text to ("" + floor(requestedCruiseSpeed)).
+}.
+
 LOCAL speedTextField TO airSpeedBox:ADDTEXTFIELD("").
-SET speedTextField:STYLE:ALIGN TO "RIGHT".
+SET speedTextField:STYLE:ALIGN TO "CENTER".
 SET speedTextField:STYLE:HSTRETCH TO True.
 set speedTextField:style:width to 60.
+
+local speedIncreaseButton to airSpeedBox:addButton("Faster").
+SET speedIncreaseButton:STYLE:ALIGN TO "CENTER".
+SET speedIncreaseButton:STYLE:HSTRETCH TO False.
+set speedIncreaseButton:style:width to 60.
+set speedIncreaseButton:onClick to {
+	increaseCruiseSpeed(5).
+	set speedTextField:text to ("" + floor(requestedCruiseSpeed)).
+}.
 
 set speedTextField:onConfirm to {
 	parameter str.
@@ -25,16 +46,31 @@ set speedTextField:onConfirm to {
 	}
 	print "speed confirmation: " + convertedVal.
 	set requestedCruiseSpeed to convertedVal.
-	set speedTextField:text to "" + requestedCruiseSpeed.
+	set speedTextField:text to ("" + floor(requestedCruiseSpeed)).
 }.
 
+//////////////////////////////////////////////////////////////////   ALTITUDE
 
 LOCAL altitudeBox is my_gui:addHBox().
 
+
+
 LOCAL label IS altitudeBox:ADDLABEL("Altitude").
 SET label:STYLE:ALIGN TO "LEFT".
+
+
+
+local altitudeDecreaseButton to altitudeBox:addButton("v").
+SET altitudeDecreaseButton:STYLE:ALIGN TO "CENTER".
+SET altitudeDecreaseButton:STYLE:HSTRETCH TO False.
+set altitudeDecreaseButton:style:width to 60.
+set altitudeDecreaseButton:onClick to {
+	increaseRequestedAltitude(-5).
+	set altitudeTextField:text to ("" + floor(requestedAlt)).
+}.
+
 LOCAL altitudeTextField TO altitudeBox:ADDTEXTFIELD("").
-SET altitudeTextField:STYLE:ALIGN TO "RIGHT".
+SET altitudeTextField:STYLE:ALIGN TO "CENTER".
 SET altitudeTextField:STYLE:HSTRETCH TO True.
 set altitudeTextField:style:width to 60.
 set altitudeTextField:onConfirm to {
@@ -48,6 +84,17 @@ set altitudeTextField:onConfirm to {
 	set requestedAlt to convertedVal.
 	set altitudeTextField:text to "" + requestedAlt.
 }.
+
+local altitudeIncreaseButton to altitudeBox:addButton("^").
+SET altitudeIncreaseButton:STYLE:ALIGN TO "CENTER".
+SET altitudeIncreaseButton:STYLE:HSTRETCH TO False.
+set altitudeIncreaseButton:style:width to 60.
+set altitudeIncreaseButton:onClick to {
+	increaseRequestedAltitude(5).
+	set altitudeTextField:text to ("" + floor(requestedAlt)).
+}.
+
+//////////////////////////////////////////////////////////////////   HEADING
 
 LOCAL headingBox is my_gui:addHBox().
 
@@ -100,11 +147,8 @@ print "Starting.".
 // Increase the loading distance.
 set KUNIVERSE:DEFAULTLOADDISTANCE:FLYING:load to 5000.
 
-set takeoffSpeed to 80.
 set altitudeIncrement to 10.
-//set targetVerticalSpeed to 10.
 set speedIncrement to 10.
-// Cruise speed, requestedAlt and heading are set after the PID coefficients.
 set terrainLatitude to -0.08726.
 set terrainLongitude to -74.623. // west; east: -74.580
 set terrainAltitude to 70.
@@ -133,14 +177,19 @@ set dt to 0.3.
 // this PID controls vertical speed, or vario
 set kPvario to 0.5. set kIvario to 0.1. set kDvario to 0.5.
 
-set requestedHeading to 90.
+set requestedHeading to -floor(ship:bearing).
+set requestedHeading to 5*(floor(requestedHeading/5)).
+
+until (requestedHeading > 0) {
+	set requestedHeading to requestedHeading + 360.
+} 
+
 set headingTextField:text to "" + requestedHeading.
-set requestedCruiseSpeed to 150.
+set requestedCruiseSpeed to 5*(floor(ship:velocity:surface:mag/5)).
 set speedTextField:text to "" + requestedCruiseSpeed.
-set requestedAlt to 1000.
+set requestedAlt to 5*floor(ship:altitude/5).
 set altitudeTextField:text to "" + requestedAlt.
 set requestedVario to 0.
-// set isSmoothing to false.
 
 set isFollowingTarget to false.
 set distanceToTarget to 0.
@@ -308,6 +357,18 @@ declare function increaseHeading {
 	set headingTextField:text to "" + requestedHeading.
 }
 
+declare function increaseCruiseSpeed {
+	parameter dSpeed.
+
+	set requestedCruiseSpeed to requestedCruiseSpeed + dSpeed.
+}
+
+declare function increaseRequestedAltitude {
+	parameter dAlt.
+
+	set requestedAlt to requestedAlt + dAlt.
+}
+			
 declare function getHeadingForTarget {
 
 	if hastarget {
@@ -508,35 +569,6 @@ until exit = true{
 	
 	set requestedVarioOld to requestedVario.
 	set requestedVario to computeSmoothedVario(ship:altitude, requestedAlt, requestedVarioOld).
-
-	
-	//if phase = "climb" and ship:altitude > requestedAlt - cruiseAltitudeMargin {
-	//	print "Target altitude almost reached, starting cruise phase; target altitude: " + requestedAlt + " m, requested speed: " + requestedCruiseSpeed + " m/s.".
-	//	set phase to "cruise".
-	//	// set requestedCruiseSpeed to requestedCruiseSpeed.
-	//}
-	//else if phase = "takeoff" {
-	//	// Gain speed
-	//	brakes off.
-	//	print "Takeoff, speed " + ship:velocity:surface:mag + ", aiming for " + takeoffSpeed.
-	//	if ship:velocity:surface:mag > takeoffSpeed {
-	//		print "Reaching almost takeoff speed".
-	//		set phase to "climb".
-	//	}
-	//}
-	//else if phase = "climb" {
-	//	print "climb".
-	//	// PID for vertical speed
-	//	set PvSpeedPrev to targetVerticalSpeed - prevVspeed.
-	//	set PvSpeed to targetVerticalSpeed - ship:verticalSpeed.
-	//	set IvSpeed to IvSpeed + PvSpeed*dt.
-	//	set DvSpeed to (PvSpeed - PvSpeedPrev)/dt.
-	//	set prevVspeed to ship:verticalSpeed.
-	//	// TODO: if kIalt * Ialt > tuneLimitAltitude { set Ialt to tuneLimitAltitude/kIalt.} // Limit kI*i to [-1, 1] * tuneLimitAltitude
-	//	// TODO: if kIalt * Ialt < -tuneLimitAltitude { set Ialt to -tuneLimitAltitude/kIalt.}
-	//	set targetPitch to kPvSpeed * PvSpeed + kIvSpeed * IvSpeed + kDvSpeed * DvSpeed.
-	//}
-	//else {
 		
 	set Pvario to requestedVario - ship:verticalSpeed.
 	set Ivario to Ivario + Pvario*dt.
