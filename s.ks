@@ -1,8 +1,16 @@
+wait until ship:unpacked.
+clearscreen.
+
+// Open terminal
+CORE:PART:GETMODULE("kOSProcessor"):DOEVENT("Open Terminal").
+
 
 // Create the GUI
 
 LOCAL my_gui IS GUI(300,150).
 set isGuiVisible to true.
+set isReentryActive to false.
+set reentryPitch to 0.
 
 // Add widgets to the GUI
 
@@ -114,6 +122,18 @@ SET headingTextField:STYLE:ALIGN TO "CENTER".
 SET headingTextField:STYLE:HSTRETCH TO False.
 set headingTextField:style:width to 60.
 
+ set headingTextField:onConfirm to {
+ 	parameter str.
+ 	set convertedVal to str:toNumber(-9999).
+ 	if convertedVal = -9999 {
+ 		print "error in heading conversion, setting heading to " + requestedHeading.
+ 		set convertedVal to requestedHeading.
+ 	}
+ 	print "heading confirmation: " + convertedVal.
+ 	set requestedHeading to convertedVal.
+ 	set headingTextField:text to "" + requestedHeading.
+ }.
+
 local headingRightButton to headingBox:addButton("Right").
 SET headingRightButton:STYLE:ALIGN TO "RIGHT".
 SET headingRightButton:STYLE:HSTRETCH TO False.
@@ -123,6 +143,54 @@ set headingRightButton:onClick to {
 }.
 
 
+
+//////////////////////////////////////////////////////////////////   REENTRY
+
+LOCAL reentryBox is my_gui:addHBox().
+LOCAL reentrycheckBox is reentryBox:addCheckBox("Reentry", false).
+
+local reentryLowerPitchButton to reentryBox:addButton("-").
+SET reentryLowerPitchButton:STYLE:ALIGN TO "LEFT".
+SET reentryLowerPitchButton:STYLE:HSTRETCH TO False.
+set reentryLowerPitchButton:style:width to 60.
+set reentryLowerPitchButton:onClick to {
+	set reentryPitch to reentryPitch - 5.
+	set reentryPitchTextField:text to "" + reentryPitch.
+}.
+
+LOCAL reentryPitchTextField TO reentryBox:ADDTEXTFIELD("").
+SET reentryPitchTextField:STYLE:ALIGN TO "CENTER".
+SET reentryPitchTextField:STYLE:HSTRETCH TO False.
+set reentryPitchTextField:style:width to 60.
+set reentryPitchTextField:text to "" + reentryPitch.
+
+local reentryHigherPitchButton to reentryBox:addButton("+").
+SET reentryHigherPitchButton:STYLE:ALIGN TO "RIGHT".
+SET reentryHigherPitchButton:STYLE:HSTRETCH TO False.
+set reentryHigherPitchButton:style:width to 60.
+set reentryHigherPitchButton:onClick to {
+	set reentryPitch to reentryPitch + 5.
+	set reentryPitchTextField:text to "" + reentryPitch.
+}.
+
+set reentrycheckBox:onToggle to {
+	parameter val.
+	set isReentryActive to val.
+	if isReentryActive {
+		set text to "active".
+		set reentryPitch to 45.
+		print "coucou".
+		set reentryPitchTextField:text to "" + reentryPitch.
+	}
+	else {
+		set text to "inactive".
+	}
+	print "Reentry " + text.
+}.
+
+
+//////////////////////////////////////////////////////////////////   END GUI
+
 // Show the GUI.
 my_gui:SHOW().
 
@@ -130,18 +198,13 @@ my_gui:SHOW().
 LOCAL isDone IS FALSE.
 
 
-
-
-
-// END GUI
-
 set standardMaxVario to 45.
 set extendedMaxVario to 70.
 set speedForExtendedVario to 200.
 set currentMaxVario to 0.
 set varioSmoothingRate to 2.
 
-clearscreen.
+
 print "Starting.".
 
 // Increase the loading distance.
@@ -242,31 +305,36 @@ set goingToNewVario to false.
 set previousChangeInTargetVario to 0.
 
 declare function computeSmoothedVario {
-	parameter currentAltitude.
-	parameter requestedAltitude.
-	parameter requestedVarioOld.
+	if not isReentryActive {
+		parameter currentAltitude.
+		parameter requestedAltitude.
+		parameter requestedVarioOld.
 
-	set roughVario to computeVario(currentAltitude, requestedAltitude).
-	
-	set isVarioNew to false.
-	
-	if roughVario > requestedVarioOld + varioSmoothingRate {
-		set varioSmoothed to requestedVarioOld + varioSmoothingRate.
-	}
-	else if roughVario < requestedVarioOld - varioSmoothingRate {
-		set varioSmoothed to requestedVarioOld - varioSmoothingRate.
+		set roughVario to computeVario(currentAltitude, requestedAltitude).
+		
+		set isVarioNew to false.
+		
+		if roughVario > requestedVarioOld + varioSmoothingRate {
+			set varioSmoothed to requestedVarioOld + varioSmoothingRate.
+		}
+		else if roughVario < requestedVarioOld - varioSmoothingRate {
+			set varioSmoothed to requestedVarioOld - varioSmoothingRate.
+		}
+		else {
+			set varioSmoothed to roughVario.
+			if roughVario <> requestedVarioOld and abs(roughVario) >= 1{
+				print "final vario: " + varioSmoothed.
+			}
+		}
+		
+		if abs(varioSmoothed) > 1 and varioSmoothed <> roughVario {
+			print "smoothed vario: " + varioSmoothed.
+		}
+		return varioSmoothed.
 	}
 	else {
-		set varioSmoothed to roughVario.
-		if roughVario <> requestedVarioOld and abs(roughVario) >= 1{
-			print "final vario: " + varioSmoothed.
-		}
+		return 0.
 	}
-	
-	if abs(varioSmoothed) > 1 and varioSmoothed <> roughVario {
-		print "smoothed vario: " + varioSmoothed.
-	}
-	return varioSmoothed.
 }
 
 declare function computeVario {
@@ -570,10 +638,15 @@ until exit = true{
 	set requestedVarioOld to requestedVario.
 	set requestedVario to computeSmoothedVario(ship:altitude, requestedAlt, requestedVarioOld).
 		
-	set Pvario to requestedVario - ship:verticalSpeed.
-	set Ivario to Ivario + Pvario*dt.
-	set Dvario to (Pvario - PvarioPrev)/dt.
-	set targetPitch to kPvario*Pvario + kIvario*Ivario + kDvario*Dvario.
+	if(isReentryActive){
+		set targetPitch to reentryPitch.
+	}
+	else{
+		set Pvario to requestedVario - ship:verticalSpeed.
+		set Ivario to Ivario + Pvario*dt.
+		set Dvario to (Pvario - PvarioPrev)/dt.
+		set targetPitch to kPvario*Pvario + kIvario*Ivario + kDvario*Dvario.
+	}
 	
 	set prevVario to ship:verticalSpeed.
 	set PvSpeedPrev to requestedVario - ship:verticalSpeed.
