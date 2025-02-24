@@ -1,16 +1,30 @@
 wait until ship:unpacked.
 clearscreen.
 
+print "This is the right file".
+
 // Open terminal
 CORE:PART:GETMODULE("kOSProcessor"):DOEVENT("Open Terminal").
-
+set terminal:height to 8.
+set terminal:width to 70.
 
 // Create the GUI
 
 LOCAL my_gui IS GUI(300,150).
 set isGuiVisible to true.
-set isReentryActive to false.
-set reentryPitch to 0.
+set my_gui:x to 1200.
+set my_gui:y to 850.
+
+// Flags for the shuttle modes
+set isShuttleFlightActive to false.  // true when the shuttle is in liftoff or reentry mode.
+set isShuttleLiftoffActive to false. // true when the shuttle is in liftoff mode.
+set isReentryActive to false.        // true when the shuttle is in reentry mode.
+
+
+// Default values
+set defaultReentryPitch to 45.
+set defaultLiftoffPitch to 90.
+set shuttlePitch to 0.
 
 // Add widgets to the GUI
 
@@ -144,49 +158,106 @@ set headingRightButton:onClick to {
 
 
 
+//////////////////////////////////////////////////////////////////   SHUTTLE
+
+//////////////////////////////////////////////////////////////////   SHUTTLE MAIN CONTROLS
+
+LOCAL shuttleBox is my_gui:addHBox().
+
+LOCAL shuttleCheckBox is shuttleBox:addCheckBox("Shuttle", false).
+
+local shuttleLowerPitchButton to shuttleBox:addButton("-").
+SET shuttleLowerPitchButton:STYLE:ALIGN TO "LEFT".
+SET shuttleLowerPitchButton:STYLE:HSTRETCH TO False.
+set shuttleLowerPitchButton:style:width to 60.
+set shuttleLowerPitchButton:onClick to {
+	set shuttlePitch to shuttlePitch - 5.
+	set shuttlePitchTextField:text to ("" + shuttlePitch).
+}.
+shuttleLowerPitchButton:hide().
+
+LOCAL shuttlePitchTextField TO shuttleBox:ADDTEXTFIELD("").
+SET shuttlePitchTextField:STYLE:ALIGN TO "CENTER".
+SET shuttlePitchTextField:STYLE:HSTRETCH TO False.
+set shuttlePitchTextField:style:width to 60.
+set shuttlePitchTextField:text to ("" + shuttlePitch).
+shuttlePitchTextField:hide().
+
+local shuttleHigherPitchButton to shuttleBox:addButton("+").
+SET shuttleHigherPitchButton:STYLE:ALIGN TO "RIGHT".
+SET shuttleHigherPitchButton:STYLE:HSTRETCH TO False.
+set shuttleHigherPitchButton:style:width to 60.
+set shuttleHigherPitchButton:onClick to {
+	set shuttlePitch to shuttlePitch + 5.
+	set shuttlePitchTextField:text to ("" + shuttlePitch).
+}.
+shuttleHigherPitchButton:hide().
+
+set shuttleCheckBox:onToggle to {
+	parameter val.
+	set isShuttleFlightActive to val.
+	if isShuttleFlightActive {
+		shuttleLiftoffCheckBox:show().
+		shuttleReentryCheckBox:show().
+		shuttleLowerPitchButton:show().
+		shuttleHigherPitchButton:show().
+		shuttlePitchTextField:show().
+	}
+	else {
+		set isShuttleFlightActive to false.
+		set isShuttleLiftoffActive to false.
+		set isReentryActive to false.
+		set shuttleLiftoffCheckBox:pressed to false.
+		set shuttleReentryCheckBox:pressed to false.
+		shuttleLiftoffCheckBox:hide().
+		shuttleReentryCheckBox:hide().
+		shuttleLowerPitchButton:hide().
+		shuttleHigherPitchButton:hide().
+		shuttlePitchTextField:hide().
+	}
+}.
+
+
+//////////////////////////////////////////////////////////////////   LIFTOFF + REENTRY
+LOCAL shuttleSecondRow is my_gui:addHBox().
+
+
+//////////////////////////////////////////////////////////////////   SHUTTLE LIFTOFF
+
+LOCAL shuttleLiftoffCheckBox is shuttleSecondRow:addCheckBox("Shuttle Liftoff", false).
+
+set shuttleLiftoffCheckBox:onToggle to {
+	parameter val.
+	set isShuttleLiftoffActive to val.
+	if isShuttleLiftoffActive {
+		print "Shuttle liftoff sequence.".
+		set shuttlePitch to defaultLiftoffPitch.
+		set shuttlePitchTextField:text to ("" + shuttlePitch).
+		set shuttleReentryCheckBox:pressed to false.
+	}
+}.
+
+shuttleLiftoffCheckBox:hide().
+
+
 //////////////////////////////////////////////////////////////////   REENTRY
 
-LOCAL reentryBox is my_gui:addHBox().
-LOCAL reentrycheckBox is reentryBox:addCheckBox("Reentry", false).
+LOCAL shuttleReentryCheckBox is shuttleSecondRow:addCheckBox("Reentry", false).
 
-local reentryLowerPitchButton to reentryBox:addButton("-").
-SET reentryLowerPitchButton:STYLE:ALIGN TO "LEFT".
-SET reentryLowerPitchButton:STYLE:HSTRETCH TO False.
-set reentryLowerPitchButton:style:width to 60.
-set reentryLowerPitchButton:onClick to {
-	set reentryPitch to reentryPitch - 5.
-	set reentryPitchTextField:text to "" + reentryPitch.
-}.
 
-LOCAL reentryPitchTextField TO reentryBox:ADDTEXTFIELD("").
-SET reentryPitchTextField:STYLE:ALIGN TO "CENTER".
-SET reentryPitchTextField:STYLE:HSTRETCH TO False.
-set reentryPitchTextField:style:width to 60.
-set reentryPitchTextField:text to "" + reentryPitch.
-
-local reentryHigherPitchButton to reentryBox:addButton("+").
-SET reentryHigherPitchButton:STYLE:ALIGN TO "RIGHT".
-SET reentryHigherPitchButton:STYLE:HSTRETCH TO False.
-set reentryHigherPitchButton:style:width to 60.
-set reentryHigherPitchButton:onClick to {
-	set reentryPitch to reentryPitch + 5.
-	set reentryPitchTextField:text to "" + reentryPitch.
-}.
-
-set reentrycheckBox:onToggle to {
+set shuttleReentryCheckBox:onToggle to {
 	parameter val.
 	set isReentryActive to val.
 	if isReentryActive {
-		set text to "active".
-		set reentryPitch to 45.
-		print "coucou".
-		set reentryPitchTextField:text to "" + reentryPitch.
+		print "Shuttle reentry start.".
+		set shuttlePitch to defaultReentryPitch.
+		set shuttlePitchTextField:text to ("" + shuttlePitch).
+		set shuttleLiftoffCheckBox:pressed to false.
+		shutdownAndLockAllEngines().
 	}
-	else {
-		set text to "inactive".
-	}
-	print "Reentry " + text.
 }.
+
+shuttleReentryCheckBox:hide().
 
 
 //////////////////////////////////////////////////////////////////   END GUI
@@ -435,6 +506,7 @@ declare function increaseRequestedAltitude {
 	parameter dAlt.
 
 	set requestedAlt to requestedAlt + dAlt.
+	print "requestedAlt: " + requestedAlt.
 }
 			
 declare function getHeadingForTarget {
@@ -615,6 +687,9 @@ declare function getApproachSector {
 	return "E".
 }
 
+declare function shutdownAndLockAllEngines {
+	print "TODO: shutting down all engines and locking gimbals.".
+}
 
 set exit to false.
 until exit = true{
@@ -639,35 +714,41 @@ until exit = true{
 	set requestedVario to computeSmoothedVario(ship:altitude, requestedAlt, requestedVarioOld).
 		
 	if(isReentryActive){
-		set targetPitch to reentryPitch.
+		// print "shuttle pitch for reentry: " + targetPitch.
+		set targetPitch to shuttlePitch.
+		set targetThrottle to 0.
+	}
+	else if (isShuttleLiftoffActive){
+		// print "shuttle pitch for liftoff: " + targetPitch.
+		set targetPitch to shuttlePitch.
+		set targetThrottle to 1.
 	}
 	else{
 		set Pvario to requestedVario - ship:verticalSpeed.
 		set Ivario to Ivario + Pvario*dt.
 		set Dvario to (Pvario - PvarioPrev)/dt.
 		set targetPitch to kPvario*Pvario + kIvario*Ivario + kDvario*Dvario.
+		set prevVario to ship:verticalSpeed.
+		set PvSpeedPrev to requestedVario - ship:verticalSpeed.
+
+		// print "pitch for normal flight: " + targetPitch.
+
+		// PID for speed
+		set PspeedPrev to requestedCruiseSpeed - prevSpeed.
+		set Pspeed to requestedCruiseSpeed - ship:velocity:surface:mag.
+
+		set Ispeed to Ispeed + Pspeed*dt.
+
+
+		set Dspeed to (Pspeed - PspeedPrev)/dt.
+		set prevSpeed to ship:velocity:surface:mag.
+		if kIspeed * Ispeed > tuneSpeedLimit { set Ispeed to tuneSpeedLimit/kIspeed. } // Limit kI*i to [-1, 1]
+		if kIspeed * Ispeed < -tuneSpeedLimit { set Ispeed to -tuneSpeedLimit/kIspeed. }
+
+		set targetThrottle to kPspeed * Pspeed + kIspeed * Ispeed + kDspeed * Dspeed.
 	}
 	
-	set prevVario to ship:verticalSpeed.
-	set PvSpeedPrev to requestedVario - ship:verticalSpeed.
-
-	//}
 	set targetPitchTrimmed to targetPitch.
-
-	// PID for speed
-	set PspeedPrev to requestedCruiseSpeed - prevSpeed.
-	set Pspeed to requestedCruiseSpeed - ship:velocity:surface:mag.
-
-	set Ispeed to Ispeed + Pspeed*dt.
-
-
-	set Dspeed to (Pspeed - PspeedPrev)/dt.
-	set prevSpeed to ship:velocity:surface:mag.
-	if kIspeed * Ispeed > tuneSpeedLimit { set Ispeed to tuneSpeedLimit/kIspeed. } // Limit kI*i to [-1, 1]
-	if kIspeed * Ispeed < -tuneSpeedLimit { set Ispeed to -tuneSpeedLimit/kIspeed. }
-
-	set targetThrottle to kPspeed * Pspeed + kIspeed * Ispeed + kDspeed * Dspeed.
-
 	lock throttle to targetThrottle.
 
 
@@ -706,6 +787,7 @@ until exit = true{
 		unlock steering.
 	}
 	else {
+		// print "lock steering to pitch " + targetPitchTrimmed.
 		lock steering to heading(requestedHeading, targetPitchTrimmed).
 	}
 	
@@ -809,6 +891,11 @@ until exit = true{
 			}
 		}
 		
+		if ch = "w" {
+			// If a waypoint was set as target, follow this waypoint.
+			
+		}
+		
 		if ch = "d" {
 			print "Estimated flight duration: " + remainingFlightDuration + ", expected currentRange: " + (currentRange/1000) + "km".
 		}
@@ -896,7 +983,7 @@ until exit = true{
 			print "Current longitude: " + ship:longitude.
 		}
 		
-		if ch = "w" {
+		if ch = "g" {
 			// Toggle GUI
 			if isGuiVisible {
 				my_gui:HIDE().
