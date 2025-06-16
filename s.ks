@@ -19,7 +19,14 @@ set my_gui:y to 850.
 set isShuttleFlightActive to false.  // true when the shuttle is in liftoff or reentry mode.
 set isShuttleLiftoffActive to false. // true when the shuttle is in liftoff mode.
 set isReentryActive to false.        // true when the shuttle is in reentry mode.
-
+set isAutolanding to false.
+set autolandLongitude to -74.662222.
+set autolandLatitude to -0.0725.
+set autolandAltitude to 0.
+set runwayBearing to 270.
+set alphaFinal to 2.
+set alphaApproach to 10.
+set previousTargetHeading to 0.
 
 // Default values
 set defaultReentryPitch to 45.
@@ -181,6 +188,18 @@ SET shuttlePitchTextField:STYLE:ALIGN TO "CENTER".
 SET shuttlePitchTextField:STYLE:HSTRETCH TO False.
 set shuttlePitchTextField:style:width to 60.
 set shuttlePitchTextField:text to ("" + shuttlePitch).
+set shuttlePitchTextField:onConfirm to {
+	parameter str.
+	print "shuttle text field changed: " + str.
+	
+ 	set convertedVal to str:toNumber(-9999).
+ 	if convertedVal = -9999 {
+ 		print "error in heading conversion, setting shuttle pitch to " + shuttlePitch.
+ 		set convertedVal to shuttlePitch.
+ 	}
+	print "setting shuttle pitch to " + convertedVal.
+	set shuttlePitch to convertedVal.
+}.
 shuttlePitchTextField:hide().
 
 local shuttleHigherPitchButton to shuttleBox:addButton("+").
@@ -197,6 +216,7 @@ set shuttleCheckBox:onToggle to {
 	parameter val.
 	set isShuttleFlightActive to val.
 	if isShuttleFlightActive {
+		shuttleSecondRow:show().
 		shuttleLiftoffCheckBox:show().
 		shuttleReentryCheckBox:show().
 		shuttleLowerPitchButton:show().
@@ -214,12 +234,14 @@ set shuttleCheckBox:onToggle to {
 		shuttleLowerPitchButton:hide().
 		shuttleHigherPitchButton:hide().
 		shuttlePitchTextField:hide().
+		shuttleSecondRow:hide().
 	}
 }.
 
 
 //////////////////////////////////////////////////////////////////   LIFTOFF + REENTRY
 LOCAL shuttleSecondRow is my_gui:addHBox().
+shuttleSecondRow:hide().
 
 
 //////////////////////////////////////////////////////////////////   SHUTTLE LIFTOFF
@@ -260,10 +282,33 @@ set shuttleReentryCheckBox:onToggle to {
 shuttleReentryCheckBox:hide().
 
 
+//////////////////////////////////////////////////////////////////   AUTOLAND
+
+LOCAL autolandBox is my_gui:addHBox().
+
+LOCAL autolandCheckbox is autolandBox:addCheckBox("Autoland").
+
+set autolandCheckbox:onToggle to {
+	parameter val.
+	set isAutolanding to val.
+	print "autolanding: " + val.
+}.
+
+//////////////////////////////////////////////////////////////////   END AUTOLAND
+
 //////////////////////////////////////////////////////////////////   END GUI
 
 // Show the GUI.
 my_gui:SHOW().
+
+
+declare function trimDigits {
+	parameter value.
+
+	set dotIndex to (value+""):findLast(".").
+	set valueTrimmed to (value+""):substring(0, dotIndex+3).
+	return valueTrimmed.
+}
 
 // Handle GUI widget interactions.
 LOCAL isDone IS FALSE.
@@ -279,7 +324,18 @@ set varioSmoothingRate to 2.
 print "Starting.".
 
 // Increase the loading distance.
-set KUNIVERSE:DEFAULTLOADDISTANCE:FLYING:load to 5000.
+set ship:LoadDistance:flying:load to 5000.
+set ship:LoadDistance:flying:pack to 3000.
+wait 0.001.
+set ship:LoadDistance:landed:load to 5000.
+set ship:LoadDistance:landed:pack to 3000.
+
+//set KUNIVERSE:defaultLoadDistance:FLYING:load to 5000.
+//set KUNIVERSE:defaultLoadDistance:LANDED:load to 5000.
+//wait 0.001.
+//set KUNIVERSE:defaultPackDistance:FLYING:load to 5000.
+//set KUNIVERSE:defaultPackDistance:LANDED:load to 5000.
+
 
 set altitudeIncrement to 10.
 set speedIncrement to 10.
@@ -510,6 +566,7 @@ declare function increaseRequestedAltitude {
 }
 			
 declare function getHeadingForTarget {
+	// TODO write the doc and set meaningful variable names.
 
 	if hastarget {
 		
@@ -531,22 +588,21 @@ declare function getHeadingForTarget {
 		
 		
 		set K to PBX / sqrt( PBx*PBx + PBy*PBy).
-		
-		if PBx > 0 and PBy > 0 {
-			set targetHeading to arcsin(K).
-		}
-		else if PBx > 0 and PBy < 0 {
-			set targetHeading to arcsin(-K) + 180.
-		}
-		else if PBx < 0 and PBy > 0 {
-			set targetHeading to arcsin(K).
+
+		if PBy > 0 {
+			set newTargetHeading to arcsin(K).
 		}
 		else {
-			// PBx < 0 and PBy < 0
-			set targetHeading to 180 - arcsin(K).
+			set newTargetHeading to 180 - arcsin(K).
 		}
 		
+		// Dampen the new target heading
+		set dampener to 0.7. // 0: no damping, 1: full damping (and no taking new heading into account)
+		set targetHeading to previousTargetHeading + (1-dampener)*(newTargetHeading - previousTargetHeading).
+		
 		// print "Target heading: " + targetHeading.
+		
+		set previousTargetHeading to targetHeading.
 		return targetHeading.
 		
 	}
@@ -580,7 +636,7 @@ declare function computeSpeedFromTarget {
 		}
 		else {	// MOVING TARGET or FLYING SHIP
 			
-			print "follow flying target".
+			print "follow flying target, d = " + trimDigits(distanceToTarget).
 			
 			if distanceToTarget < 100 {
 				// We now are close to target
@@ -711,8 +767,13 @@ until exit = true{
 	}
 	
 	set requestedVarioOld to requestedVario.
-	set requestedVario to computeSmoothedVario(ship:altitude, requestedAlt, requestedVarioOld).
-		
+	if(isShuttleFlightActive){
+		set requestedVario to 0. // Unused
+	}
+	else {
+		set requestedVario to computeSmoothedVario(ship:altitude, requestedAlt, requestedVarioOld).
+	}
+	
 	if(isReentryActive){
 		// print "shuttle pitch for reentry: " + targetPitch.
 		set targetPitch to shuttlePitch.
@@ -764,6 +825,36 @@ until exit = true{
 	if isFollowingTarget {
 		set requestedHeading to getHeadingForTarget().
 		set requestedCruiseSpeed to computeSpeedFromTarget().
+		set requestedAlt to target:altitude.
+	}
+	else if isAutolanding {
+		// Compute heading to runway.
+		print "Going to the runway " + autolandLatitude + ", " + autolandLongitude.
+		set dLat to autolandLatitude - ship:latitude.
+		set dLon to autolandLongitude - ship:longitude.
+		//print "dLat: " + trimDigits(dLat) + ", dLon: " + trimDigits(dLon).
+		
+		//set alpha to arctan(dLat/dLon).
+		set alpha to arctan2(dLat, dLon).
+		print "alpha: " + alpha.
+		
+		set beta to alpha - runwayBearing + 90.
+		//if beta < -180 {
+		//	set beta to beta + 360.
+		//}
+		
+		if abs(beta) <= alphaFinal {
+			set requestedHeading to runwayBearing - 0.5*beta.
+			print "FINAL APPROACH, requestedHeading is " + requestedHeading.
+		}
+		else if abs(beta) <= alphaApproach {
+			set requestedHeading to runwayBearing - 2*beta.
+			print "FIRST APPROACH, requestedHeading is " + requestedHeading.
+		}
+		else {
+			print "autoland; beta: " + beta + ", alphaApproach: " + alphaApproach + ", alphaFinal: " + alphaFinal.
+			// Do not change requestedHeading.
+		}
 	}
 	else {
 		// Simply apply requested heading.
@@ -897,7 +988,7 @@ until exit = true{
 		}
 		
 		if ch = "d" {
-			print "Estimated flight duration: " + remainingFlightDuration + ", expected currentRange: " + (currentRange/1000) + "km".
+			print "Estimated flight duration: " + trimDigits(remainingFlightDuration) + "s, expected currentRange: " + trimDigits(currentRange/1000) + "km".
 		}
 		if ch = "f" {
 			set currentSpeed to ship:velocity:surface:mag. // speed in m/s
@@ -915,14 +1006,14 @@ until exit = true{
 			// Remove non-significant digits
 			if(fuelEfficiency >= 1000) {
 				set fuelEfficiency to fuelEfficiency/1000. // (km/L)
-				set dotIndex to (fuelEfficiency+""):findLast(".").
-				set fuelEfficiencyTrimmed to (fuelEfficiency+""):substring(0, dotIndex+3).
-				print "Fuel efficiency: " + fuelEfficiencyTrimmed + " km/L".
+				//set dotIndex to (fuelEfficiency+""):findLast(".").
+				//set fuelEfficiencyTrimmed to (fuelEfficiency+""):substring(0, dotIndex+3).
+				print "Fuel efficiency: " + trimDigits(fuelEfficiency) + " km/L".
 			}
 			else{
-				set dotIndex to (fuelEfficiency+""):findLast(".").
-				set fuelEfficiencyTrimmed to (fuelEfficiency+""):substring(0, dotIndex+3).
-				print "Fuel efficiency: " + fuelEfficiencyTrimmed + " m/L".
+				//set dotIndex to (fuelEfficiency+""):findLast(".").
+				//set fuelEfficiencyTrimmed to (fuelEfficiency+""):substring(0, dotIndex+3).
+				print "Fuel efficiency: " + trimDigits(fuelEfficiency) + " m/L".
 			}
 		}
 		
