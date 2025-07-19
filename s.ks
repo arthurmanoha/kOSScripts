@@ -20,6 +20,8 @@ set isShuttleFlightActive to false.  // true when the shuttle is in liftoff or r
 set isShuttleLiftoffActive to false. // true when the shuttle is in liftoff mode.
 set isReentryActive to false.        // true when the shuttle is in reentry mode.
 set isAutolanding to false.
+set isCircling to false.
+set circleAngleIncrementPerSecond to 0.
 set autolandLongitude to -74.662222.
 set autolandLatitude to -0.0725.
 set autolandAltitude to 0.
@@ -253,6 +255,7 @@ set shuttleLiftoffCheckBox:onToggle to {
 	set isShuttleLiftoffActive to val.
 	if isShuttleLiftoffActive {
 		print "Shuttle liftoff sequence.".
+		freeSSMEsGimbal().
 		set shuttlePitch to defaultLiftoffPitch.
 		set shuttlePitchTextField:text to ("" + shuttlePitch).
 		set shuttleReentryCheckBox:pressed to false.
@@ -271,22 +274,22 @@ set shuttleReentryCheckBox:onToggle to {
 	parameter val.
 	set isReentryActive to val.
 	if isReentryActive {
-		print "Shuttle reentry start.".
+		print "Shuttle reentry sequence.".
 		set shuttlePitch to defaultReentryPitch.
 		set shuttlePitchTextField:text to ("" + shuttlePitch).
 		set shuttleLiftoffCheckBox:pressed to false.
-		shutdownAndLockAllEngines().
+		shutdownAndLockSSMEs().
 	}
 }.
 
 shuttleReentryCheckBox:hide().
 
 
-//////////////////////////////////////////////////////////////////   AUTOLAND
+//////////////////////////////////////////////////////////////////   AUTOLAND AND CIRCLE
 
-LOCAL autolandBox is my_gui:addHBox().
+LOCAL autolandAndTurnBox is my_gui:addHBox().
 
-LOCAL autolandCheckbox is autolandBox:addCheckBox("Autoland").
+LOCAL autolandCheckbox is autolandAndTurnBox:addCheckBox("Autoland").
 
 set autolandCheckbox:onToggle to {
 	parameter val.
@@ -294,7 +297,38 @@ set autolandCheckbox:onToggle to {
 	print "autolanding: " + val.
 }.
 
-//////////////////////////////////////////////////////////////////   END AUTOLAND
+LOCAL circleCheckBox is autolandAndTurnBox:addCheckBox("Circle").
+LOCAL circleTextField is autolandAndTurnBox:addTextField().
+circleTextField:hide().
+
+set circleCheckBox:onToggle to {
+	parameter val.
+	set isCircling to val.
+	if isCircling {
+		circleTextField:show().
+	}
+	else {
+		circleTextField:hide().
+		set circleAngleIncrementPerSecond to 0.
+	}
+	print "circling: " + val.
+}.
+
+
+set circleTextField:onConfirm to {
+	parameter str.
+	set convertedVal to str:toNumber(-9999).
+	if convertedVal = -9999 {
+		print "error in circle conversion, setting angle to 0".
+		set convertedVal to 0.
+	}
+	else {
+		print "setting circle increment to " + convertedVal.
+	}
+	set circleAngleIncrementPerSecond to convertedVal.
+}.
+
+//////////////////////////////////////////////////////////////////   END AUTOLAND AND CIRCLE
 
 //////////////////////////////////////////////////////////////////   END GUI
 
@@ -306,7 +340,14 @@ declare function trimDigits {
 	parameter value.
 
 	set dotIndex to (value+""):findLast(".").
-	set valueTrimmed to (value+""):substring(0, dotIndex+3).
+	if dotIndex > 0 {
+		set stringValue to (value+"").
+		set trimIndex to min(dotIndex+3, stringValue:length).
+		set valueTrimmed to (value+""):substring(0, trimIndex).
+	}
+	else {
+		set valueTrimmed to value.
+	}
 	return valueTrimmed.
 }
 
@@ -743,8 +784,39 @@ declare function getApproachSector {
 	return "E".
 }
 
-declare function shutdownAndLockAllEngines {
-	print "TODO: shutting down all engines and locking gimbals.".
+// Free SSMEs gimbals.
+declare function freeSSMEsGimbal {
+
+	list engines in engineList.
+	set nbEnginesFound to 0.
+	for engine in engineList{
+		if engine:name:contains("SSME"){
+			// This engine is an SSME.
+			// Freeing gimbal.
+			set moduleGimbal to engine:GetModule("ModuleGimbal").
+			set moduleGimbal:limit to 100.
+		}
+	}
+}
+
+// Shutdown SSMEs and lock gimbals.
+declare function shutdownAndLockSSMEs {
+	
+	print "Shutting down SSMEs and locking gimbals.".
+	list engines in engineList.
+	for engine in engineList{
+		if engine:name:contains("SSME"){
+			// This engine is an SSME.
+			set engineFound to true.
+			
+			// Shutting down engine.
+			engine:shutdown.
+						
+			// Locking gimbal.
+			set moduleGimbal to engine:GetModule("ModuleGimbal").
+			set moduleGimbal:limit to 0.
+		}
+	}
 }
 
 set exit to false.
@@ -856,9 +928,19 @@ until exit = true{
 			// Do not change requestedHeading.
 		}
 	}
-	else {
-		// Simply apply requested heading.
+	else if isCircling {
+		// Increase the requested heading every step.
+		set requestedHeading to requestedHeading + circleAngleIncrementPerSecond*dt.
+		if requestedHeading >= 360 {
+			set requestedHeading to requestedHeading-360.
+		}
+		else if requestedHeading < 0 {
+			set requestedHeading to requestedHeading + 360.
+		}
+		set headingTextField:text to "" + trimDigits(requestedHeading).
 	}
+	// Otherwise simply apply requested heading.
+	
 
 	// When changing directions on land, we must act on the wheel
 	if ship:status = "LANDED" {
@@ -879,7 +961,13 @@ until exit = true{
 	}
 	else {
 		// print "lock steering to pitch " + targetPitchTrimmed.
-		lock steering to heading(requestedHeading, targetPitchTrimmed).
+		set actualRequestedHeading to requestedHeading.
+		if isShuttleLiftoffActive {
+			// Shuttle flies inverted, i.e. pitch > 90
+			// print "shuttle lifting off".
+			set actualRequestedHeading to actualRequestedHeading + 180.
+		}
+		lock steering to heading(actualRequestedHeading, targetPitchTrimmed).
 	}
 	
 	// Speed and Altitude control:
@@ -892,7 +980,7 @@ until exit = true{
 	if terminal:input:haschar {
 		set ch to terminal:input:getchar().
 		if ch = terminal:input:LEFTCURSORONE {
-			decreaseHeading().
+			increaseHeading(-5).
 		}
 		if ch = terminal:input:RIGHTCURSORONE {
 			set requestedHeading to requestedHeading + dHeading.
@@ -1089,6 +1177,9 @@ until exit = true{
 			print "Exit.".
 			my_gui:HIDE().
 			sas on.
+			if isShuttleLiftoffActive {
+				shutdownAndLockSSMEs().
+			}
 			set exit to true.
 		}
 	}
