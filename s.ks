@@ -19,6 +19,7 @@ set my_gui:y to 850.
 set isShuttleFlightActive to false.  // true when the shuttle is in liftoff or reentry mode.
 set isShuttleLiftoffActive to false. // true when the shuttle is in liftoff mode.
 set isReentryActive to false.        // true when the shuttle is in reentry mode.
+set isEfficiencyDisplayed to false.
 set isAutolanding to false.
 set isCircling to false.
 set circleAngleIncrementPerSecond to 0.
@@ -224,6 +225,8 @@ set shuttleCheckBox:onToggle to {
 		shuttleLowerPitchButton:show().
 		shuttleHigherPitchButton:show().
 		shuttlePitchTextField:show().
+		efficiencyCheckBox:hide().
+		efficiencyLabel:hide().
 	}
 	else {
 		set isShuttleFlightActive to false.
@@ -237,6 +240,7 @@ set shuttleCheckBox:onToggle to {
 		shuttleHigherPitchButton:hide().
 		shuttlePitchTextField:hide().
 		shuttleSecondRow:hide().
+		efficiencyCheckBox:show().
 	}
 }.
 
@@ -283,6 +287,24 @@ set shuttleReentryCheckBox:onToggle to {
 }.
 
 shuttleReentryCheckBox:hide().
+
+
+
+LOCAL efficiencyCheckBox is shuttleBox:addCheckBox("Efficiency", false).
+LOCAL efficiencyLabel is shuttleBox:addLabel("0").
+efficiencyLabel:hide().
+
+set efficiencyCheckBox:onToggle to {
+	parameter val.
+	set isEfficiencyDisplayed to val.
+	if isEfficiencyDisplayed {
+		efficiencyCheckBox:show().
+		efficiencyLabel:show().
+	}
+	else {
+		efficiencyLabel:hide().
+	}
+}.
 
 
 //////////////////////////////////////////////////////////////////   AUTOLAND AND CIRCLE
@@ -819,6 +841,44 @@ declare function shutdownAndLockSSMEs {
 	}
 }
 
+// Get the fuel efficiency as a string with the unit and 2 decimals.
+declare function getFuelEfficiencyString {
+	
+	set fuelEfficiency to getFuelEfficiency().
+
+	// Remove non-significant digits
+	if(fuelEfficiency >= 1000) {
+		set fuelEfficiency to fuelEfficiency/1000. // (km/L)
+		//set dotIndex to (fuelEfficiency+""):findLast(".").
+		//set fuelEfficiencyTrimmed to (fuelEfficiency+""):substring(0, dotIndex+3).
+		set displayedText to trimDigits(fuelEfficiency) + " km/L".
+	}
+	else{
+		//set dotIndex to (fuelEfficiency+""):findLast(".").
+		//set fuelEfficiencyTrimmed to (fuelEfficiency+""):substring(0, dotIndex+3).
+		set displayedText to trimDigits(fuelEfficiency) + " m/L".
+	}
+	return displayedText.
+}
+
+// Get the fuel efficiency as a numerical value.
+declare function getFuelEfficiency {
+
+	set currentSpeed to ship:velocity:surface:mag. // speed in m/s
+	set instantFuelConsumption to 0.
+	list engines in engineList.
+	for engine in engineList{
+		set instantFuelConsumption to instantFuelConsumption + engine:fuelFlow.
+	}
+	if instantFuelConsumption > 0 {
+		set fuelEfficiency to (currentSpeed/instantFuelConsumption).
+	}
+	else {
+		set fuelEfficiency to 42000000000.
+	}
+	return fuelEfficiency.
+}
+
 set exit to false.
 until exit = true{
 
@@ -1079,30 +1139,7 @@ until exit = true{
 			print "Estimated flight duration: " + trimDigits(remainingFlightDuration) + "s, expected currentRange: " + trimDigits(currentRange/1000) + "km".
 		}
 		if ch = "f" {
-			set currentSpeed to ship:velocity:surface:mag. // speed in m/s
-			set instantFuelConsumption to 0.
-			list engines in engineList.
-			for engine in engineList{
-				set instantFuelConsumption to instantFuelConsumption + engine:fuelFlow.
-			}
-			if instantFuelConsumption > 0 {
-				set fuelEfficiency to (currentSpeed/instantFuelConsumption).
-			}
-			else {
-				set fuelEfficiency to 42000000000.
-			}
-			// Remove non-significant digits
-			if(fuelEfficiency >= 1000) {
-				set fuelEfficiency to fuelEfficiency/1000. // (km/L)
-				//set dotIndex to (fuelEfficiency+""):findLast(".").
-				//set fuelEfficiencyTrimmed to (fuelEfficiency+""):substring(0, dotIndex+3).
-				print "Fuel efficiency: " + trimDigits(fuelEfficiency) + " km/L".
-			}
-			else{
-				//set dotIndex to (fuelEfficiency+""):findLast(".").
-				//set fuelEfficiencyTrimmed to (fuelEfficiency+""):substring(0, dotIndex+3).
-				print "Fuel efficiency: " + trimDigits(fuelEfficiency) + " m/L".
-			}
+			print "Fuel efficiency: " + getFuelEfficiencyString().
 		}
 		
 		if ch = "h" {
@@ -1182,6 +1219,11 @@ until exit = true{
 			}
 			set exit to true.
 		}
+	}
+	
+	// Compute then print the fuel efficiency.
+	if isEfficiencyDisplayed {
+		set efficiencyLabel:text to getFuelEfficiencyString().
 	}
 	
 	
